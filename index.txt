@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>EcoHouse</title>
+</head>
+<body>
+<link rel="stylesheet" type="text/css" href="hackproj.css">
+  <div class="container">
+    <div class="main">
+      <div class="btngroup">
+        <nav>
+          <button data-page="mainpage" style="width:13%; padding:0px;">
+            <img src="https://ecohouse2025.neocities.org/EcoHouse.png" style="height:100%; object-fit:contain; align-items:center; filter:brightness(0) invert(1);">
+          </button>
+          <button data-page="calendar">Calendar</button>
+          <button data-page="rankings">Rankings</button>
+          <button data-page="photo">Photo</button>
+        </nav>
+      `</div>
+      
+      <div id="mainpage" class="page active">
+        <h1 style="text-align:center">EcoHouse</h1>
+        <h3 style="text-align:center">Connect, Compete, Contribute</h3><br>
+        <h2 style = "text-align: center">Did you know...?</h2>
+        <div id="article" style="width:60%; margin:auto;">
+          <p>Loading article...</p>
+        </div>
+      </div>
+      
+      <div id="photo" class="page">
+        <h2>Flora recognition</h2>
+        <p>Found a cool plant? Upload a picture, and we'll tell you what it is. (Powered by Pl@ntNet)</p>
+        <script src="https://cdn.jsdelivr.net/npm/ai-taxonomist/dist/src/+esm" type="module"></script>
+        <ai-taxonomist apiKey="2b10vBs4wt1c31RHkUadeaBFO"></ai-taxonomist>
+        <div id="photo-upload">
+          <h2>Upload a Photo</h2>
+          <p>Upload a picture to <b>Your Photos</b> to get 20 points. Curate your nature gallery!</p>
+          <input type="file" id="photoFile" accept="image/*" style="width:50%;display:block;margin:auto;">
+          <input type="text" id="photoLabel" placeholder="Enter label" style="width:50%;display:block;margin:auto;">
+          <button id="uploadPhoto" style="width:50%;display:block;margin:auto;">Upload</button>
+        </div>
+      </div>
+      
+      <div id="calendar" class="page">
+        <h2>Calendar</h2>
+        <p>If you're in an organisation: click on a date to <b>add a new event</b> & earn 15 points!<br>If not: join / create an organisation in <b>Rankings</b>, or view some special dates we've already put down for you!<br></p>
+        <div class="calendar">
+          <div class="header">
+            <button onclick="prevMonth()">&#8592; Prev</button>
+            <h2 id="monthYear"></h2>
+            <button onclick="nextMonth()">Next &#8594;</button>
+          </div>
+          <div class="days" id="days"></div>
+          <div class="events">
+            <h3>Events</h3>
+            <div id="eventList"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div id="rankings" class="page" style="display:flex; flex-direction:column; gap:20px;">
+        <div id="rankings-title">
+        </div>
+        <div id="rankings-body" style="display:flex; gap:20px;">
+          <div id="rankings-global" style="flex:1;padding:10px;">
+          </div>
+          <div id="rankings-org" style="flex:1;padding:10px; cursor:pointer;">
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+    <div class="sidebar">
+      <h2>Welcome back!</h2>
+      
+      <div id="auth" style="align-items:center;">
+        <input id="email" placeholder="Email" type="email" style="width:95%;" />
+        <input id="password" placeholder="Password" type="password" style="width:95%;" />
+        <button id="signup" style="width:100%;">Sign Up</button>
+        <button id="login" style="width:100%;">Login</button>
+        <button id="logout" style="display:none;width:100%;">Logout</button>
+      </div>
+      
+      <div id="status" class="info" style="padding-left:15%;padding-bottom:20%;padding-top:2%;background-image:url('https://ecohouse2025.neocities.org/statusbg.png');background-size:100% auto;"></div>
+      
+      <div id="user-area" style="display:none;">
+        <h3>Your Profile</h3>
+        <div id="your-profile"></div>
+      </div>
+      
+      <div id="moderator-area" style="display:none;">
+        <h3>All Profiles (Moderator)</h3>
+        <div id="all-profiles"></div>
+      </div>
+    </div>
+  </div>
+  
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+    
+    const SUPABASE_URL = 'https://pzglqnujacflkwyibvqc.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6Z2xxbnVqYWNmbGt3eWlidnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg0MzAyMDcsImV4cCI6MjA3NDAwNjIwN30.yyBUTIz8qoiyxDo3llqYkgS9kfh7NTj1JIVO_FHmWPY'
+    window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    
+    const $ = id => document.getElementById(id)
+    const setStatus = (msg, isError = false) => {
+      const el = $('status')
+      el.textContent = msg
+      el.className = isError ? 'error' : 'info'
+    }
+    
+    const buttons = document.querySelectorAll('nav button');
+    const pages = document.querySelectorAll('.page');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        pages.forEach(p => p.classList.remove('active'));
+        const page = document.getElementById(btn.dataset.page);
+        page.classList.add('active');
+        
+        if (btn.dataset.page === 'rankings') {
+          loadRankings();
+        }
+      });
+    });
+    
+    async function refreshUI() {
+      let user = null
+      try {
+        const { data: { user: u } } = await supabase.auth.getUser()
+        user = u
+      } catch (e) {
+        if (e.name === 'AuthSessionMissingError') {
+          console.log('No session, user is logged out')
+        } else {
+          console.error('refreshUI error', e)
+          setStatus('Unexpected error (see console)', true)
+          return
+        }
+      }
+      
+      if (!user) {
+        $('user-area').style.display = 'none'
+        $('moderator-area').style.display = 'none'
+        $('logout').style.display = 'none'
+        $('signup').style.display = $('login').style.display = 'inline'
+        $('your-profile').innerHTML = ''
+        $('all-profiles').innerHTML = ''
+        setStatus('Not signed in.')
+        return
+      }
+      
+      $('signup').style.display = $('login').style.display = 'none'
+      $('logout').style.display = 'inline'
+      $('user-area').style.display = 'block'
+      setStatus(`Signed in as ${user.email}`)
+      
+      let { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle()
+      
+      if (profileErr) {
+        console.error('Error fetching profile', profileErr)
+        setStatus('Error loading profile (see console)', true)
+        return
+      }
+      
+      if (!profile) {
+        console.log('Profile missing — creating one')
+        const { error: insertErr } = await supabase.from('profiles').insert([{
+          id: user.id,
+          email: user.email,
+          display_name: user.email.split('@')[0],
+          points: user.points
+        }])
+        if (insertErr) {
+          console.error('Failed to create profile', insertErr)
+          setStatus('Failed to create profile (see console)', true)
+          return
+        }
+        return refreshUI()
+    }
+    
+    $('your-profile').innerHTML = `
+      <div class="profile-field"><strong>Email:</strong> ${profile.email}</div>
+      <div class="profile-field"><strong>Display:</strong> ${profile.display_name}</div>
+      <div class="profile-field"><strong>Points:</strong> ${profile.points}</div>
+      <div id="my-photos">
+        <h3>My Photos</h3>
+        <div id="photosContainer" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+      </div>
+    `
+    loadUserSidebar()
+    
+    if (profile.role === 'moderator') {
+      $('moderator-area').style.display = 'block'
+      const { data: all, error: allErr } = await supabase.from('profiles').select('*')
+      if (allErr) {
+        console.error('Error fetching all profiles', allErr)
+        $('all-profiles').innerHTML = '<div class="error">Unable to load profiles. See console.</div>'
+      } else {
+        $('all-profiles').innerHTML = all.map(p => `<div>${p.display_name} (${p.email}) — ${p.role}</div>`).join('')
+      }
+    } else {
+      $('moderator-area').style.display = 'none'
+      }
+    }
+    
+    async function waitForUser(timeoutMs = 5000, intervalMs = 250) {
+      const start = Date.now()
+      while (Date.now() - start < timeoutMs) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) return user
+        await new Promise(r => setTimeout(r, intervalMs))
+      }
+      return null
+    }
+    
+    $('signup').addEventListener('click', async () => {
+      try {
+        setStatus('Signing up...')
+        $('signup').disabled = true
+        const email = $('email').value
+        const password = $('password').value
+        const { data, error } = await supabase.auth.signUp({ email, password })
+        if (error) {
+          console.error('signUp error', error)
+          setStatus('Signup failed: ' + error.message, true)
+          return
+        }
+        console.log('signUp response', data)
+        setStatus('Signed up. Confirm your email if required. Waiting for auth state...')
+        
+        const u = await waitForUser(3000)
+        if (u) {
+          setStatus('Signed up and signed in as ' + u.email)
+          await refreshUI()
+        } else {
+          setStatus('Check your email to confirm (if enabled).')
+        }
+      } finally {
+        $('signup').disabled = false
+      }
+    })
+    
+    $('login').addEventListener('click', async () => {
+      try {
+        setStatus('Logging in...')
+        $('login').disabled = true
+        const email = $('email').value
+        const password = $('password').value
+        console.log('Attempting login for', email)
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) {
+          console.error('signInWithPassword error', error)
+          setStatus('Login failed: ' + error.message, true)
+          return
+        }
+        console.log('signInWithPassword response', data)
+        
+        const { data: immediate } = await supabase.auth.getUser()
+        if (immediate && immediate.user) {
+          console.log('Immediate user present', immediate.user)
+          await refreshUI()
+          setStatus('Logged in as ' + immediate.user.email)
+          return
+        }
+        
+        const u = await waitForUser(5000)
+        if (u) {
+          console.log('Detected user after polling', u)
+          await refreshUI()
+          setStatus('Logged in as ' + u.email)
+          return
+        }
+        
+        console.warn('User not detected after login — reloading to restore session')
+        setStatus('Login may be complete — reloading to finalize session...')
+        location.reload()
+      } finally {
+        $('login').disabled = false
+      }
+    })
+    
+    $('logout').addEventListener('click', async () => {
+      setStatus('Signing out...')
+      try {
+        await supabase.auth.signOut()
+      } catch (e) {
+        console.error('Error signing out', e)
+        setStatus('Error signing out (see console)', true)
+      }
+      refreshUI()
+    })
+    
+    supabase.auth.onAuthStateChange((event, session) => {
+      console.log('onAuthStateChange', event, session)
+      refreshUI()
+    })
+    
+    refreshUI()
+  
+  </script>
+  <script src="script.js"></script>
+</body>
+</html>
